@@ -8,6 +8,7 @@ public class Tokenizer {
     private String token;
     private TokenType tokenType;
     private boolean isEnd;
+    private boolean foundSlash;
     private char curChar;
 
     public enum TokenType {KEYWORD, SYMBOL, IDENTIFIER, INT_CONST, STRING_CONST}
@@ -49,7 +50,6 @@ public class Tokenizer {
         KEYWORDS.add("else");
         KEYWORDS.add("while");
         KEYWORDS.add("return");
-        KEYWORDS.add("String");
 
         KEYMAP.put("class", KeyWord.CLASS);
         KEYMAP.put("constructor", KeyWord.CONSTRUCTOR);
@@ -72,7 +72,6 @@ public class Tokenizer {
         KEYMAP.put("else", KeyWord.ELSE);
         KEYMAP.put("while", KeyWord.WHILE);
         KEYMAP.put("return", KeyWord.RETURN);
-        KEYMAP.put("String", KeyWord.STRING);
     }
 
     public Tokenizer(String filePath) throws IOException {
@@ -80,15 +79,21 @@ public class Tokenizer {
         File file = new File(filePath);
         scanner = new FileReader(file);
         isEnd = false;
-        // get first char that isn't white space
+        // get first char that isn't white space or comment
         int charRead = scanner.read();
-
-        while (charRead != -1) {
-            curChar = (char) charRead;
-            if (curChar != ' ' & curChar != '\n' & curChar != '\t' & curChar != '\r') break;
-            charRead = scanner.read();
+        curChar = (char) charRead;
+        while (curChar == '/') {
+            advanceComment();
         }
-        if (charRead == -1) isEnd = true;
+        // skip leading white space and new lines
+        while (charRead != -1 && (curChar == ' ' | curChar == '\n' | curChar == '\t' | curChar == '\r')) {
+            charRead = scanner.read();
+            curChar = (char) charRead;
+            while (curChar == '/') {
+                advanceComment();
+            }
+        }
+        if (charRead == -1 & !foundSlash) isEnd = true;
     }
 
     public boolean hasMoreTokens() {
@@ -98,8 +103,17 @@ public class Tokenizer {
     public void advance() throws IOException {
         // Always starts at curChar
         int charRead;
+        // When removing comments at end of last processing, a slash could have been found instead
+        // check this first. If a slash was found curChar would already be at next
+        if (foundSlash) {
+            token = "/";
+            tokenType = TokenType.SYMBOL;
+            foundSlash = false;
+            if (curChar == (char) -1) isEnd = true;
+            return;
+        }
         // if first character is a symbol process symbol
-        if (SYMBOLS.contains(curChar)) {
+        else if (SYMBOLS.contains(curChar)) {
             tokenType = TokenType.SYMBOL;
             token = String.valueOf(curChar);
 
@@ -163,9 +177,54 @@ public class Tokenizer {
             // Don't advance since there can be a symbol here needed for next time
         }
         // skip trailing white space and new lines
-        while (charRead != -1 && (curChar == ' ' | curChar == '\n' | curChar == '\t' | curChar == '\r')) {
+        while (curChar == '/') {
+            advanceComment();
+        }
+        while (charRead != -1 & (curChar == ' ' | curChar == '\n' | curChar == '\t' | curChar == '\r')) {
             charRead = scanner.read();
             curChar = (char) charRead;
+            while (curChar == '/') {
+                advanceComment();
+            }
+        }
+        if (charRead == -1 & !foundSlash) isEnd = true;
+
+    }
+
+    private void advanceComment() throws IOException {
+        int charRead = scanner.read();
+        curChar = (char) charRead;
+        if (curChar == '*') {
+            charRead = scanner.read();
+            curChar = (char) charRead;
+            char prev;
+            // advance until */
+            while (charRead != -1) {
+                prev = curChar;
+                charRead = scanner.read();
+                curChar = (char) charRead;
+                if (prev == '*' & curChar == '/') {
+                    charRead = scanner.read();
+                    curChar = (char) charRead;
+                    break;
+                }
+            }
+        } else if (curChar == '/') {
+            charRead = scanner.read();
+            curChar = (char) charRead;
+            // advance until next line
+            while (charRead != -1 & curChar != '\n') {
+                charRead = scanner.read();
+                curChar = (char) charRead;
+            }
+            charRead = scanner.read();
+            curChar = (char) charRead;
+            if (curChar == '\r') {
+                charRead = scanner.read();
+                curChar = (char) charRead;
+            }
+        } else {
+            foundSlash = true;
         }
         if (charRead == -1) isEnd = true;
     }
