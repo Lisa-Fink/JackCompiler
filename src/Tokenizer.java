@@ -1,11 +1,10 @@
 import java.io.File;
-import java.io.FileNotFoundException;
 import java.io.FileReader;
 import java.io.IOException;
 import java.util.*;
 
 public class Tokenizer {
-    private FileReader scanner;
+    private final FileReader scanner;
     private String token;
     private TokenType tokenType;
     private boolean isEnd;
@@ -14,7 +13,7 @@ public class Tokenizer {
     public enum TokenType {KEYWORD, SYMBOL, IDENTIFIER, INT_CONST, STRING_CONST}
 
     public enum KeyWord {CLASS, METHOD, FUNCTION, CONSTRUCTOR, INT, BOOLEAN, CHAR, VOID,
-    VAR, STATIC, FIELD, LET, DO, IF, ELSE, WHILE, RETURN, TRUE, FALSE, NULL, THIS}
+    VAR, STATIC, FIELD, LET, DO, IF, ELSE, WHILE, RETURN, TRUE, FALSE, NULL, THIS, STRING}
 
     private static final Set<Character> SYMBOLS = new HashSet<>();
 
@@ -50,6 +49,7 @@ public class Tokenizer {
         KEYWORDS.add("else");
         KEYWORDS.add("while");
         KEYWORDS.add("return");
+        KEYWORDS.add("String");
 
         KEYMAP.put("class", KeyWord.CLASS);
         KEYMAP.put("constructor", KeyWord.CONSTRUCTOR);
@@ -72,6 +72,7 @@ public class Tokenizer {
         KEYMAP.put("else", KeyWord.ELSE);
         KEYMAP.put("while", KeyWord.WHILE);
         KEYMAP.put("return", KeyWord.RETURN);
+        KEYMAP.put("String", KeyWord.STRING);
     }
 
     public Tokenizer(String filePath) throws IOException {
@@ -84,14 +85,14 @@ public class Tokenizer {
 
         while (charRead != -1) {
             curChar = (char) charRead;
-            if (curChar != ' ') break;
+            if (curChar != ' ' & curChar != '\n' & curChar != '\t' & curChar != '\r') break;
             charRead = scanner.read();
         }
         if (charRead == -1) isEnd = true;
     }
 
     public boolean hasMoreTokens() {
-        return isEnd == false;
+        return !isEnd;
     }
 
     public void advance() throws IOException {
@@ -161,10 +162,8 @@ public class Tokenizer {
             }
             // Don't advance since there can be a symbol here needed for next time
         }
-        // skip trailing white space
-        charRead = scanner.read();
-        curChar = (char) charRead;
-        while (charRead != -1 && curChar == ' ') {
+        // skip trailing white space and new lines
+        while (charRead != -1 && (curChar == ' ' | curChar == '\n' | curChar == '\t' | curChar == '\r')) {
             charRead = scanner.read();
             curChar = (char) charRead;
         }
