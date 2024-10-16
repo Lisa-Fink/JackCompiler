@@ -1,0 +1,7 @@
+class Main {
+    String x;
+    let x = "This is a string";
+
+    int y;
+    let y = 123;
+}
