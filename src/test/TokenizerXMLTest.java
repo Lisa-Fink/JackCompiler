@@ -37,17 +37,22 @@ public class TokenizerXMLTest {
     }
     private static void handleFile(String filename) throws IOException {
         Tokenizer tokenizer = new Tokenizer(filename);
-        FileWriter outputFile = new FileWriter(filename.substring(0, filename.indexOf(".jack")) + ".xml");
+        FileWriter outputFile = new FileWriter(filename.substring(0, filename.indexOf(".jack")) + "Ttest" + ".xml", false);
         outputFile.write("<tokens>\n");
 
         while (tokenizer.hasMoreTokens()) {
+            tokenizer.advance();
             if (tokenizer.tokenType() == Tokenizer.TokenType.KEYWORD) {
                 outputFile.write("<keyword>");
                 outputFile.write(KEYMAP.get(tokenizer.keyWord()));
                 outputFile.write("</keyword>\n");
             } else if (tokenizer.tokenType() == Tokenizer.TokenType.SYMBOL) {
                 outputFile.write("<symbol>");
-                outputFile.write(tokenizer.symbol());
+                if (tokenizer.symbol() == '<') outputFile.write("&lt;");
+                else if (tokenizer.symbol() == '>') outputFile.write("&gt;");
+                else if (tokenizer.symbol() == '"') outputFile.write("&quot;");
+                else if (tokenizer.symbol() == '&') outputFile.write("&amp;");
+                else outputFile.write(tokenizer.symbol());
                 outputFile.write("</symbol>\n");
             } else if (tokenizer.tokenType() == Tokenizer.TokenType.IDENTIFIER) {
                 outputFile.write("<identifier>");
@@ -55,7 +60,7 @@ public class TokenizerXMLTest {
                 outputFile.write("</identifier>\n");
             } else if (tokenizer.tokenType() == Tokenizer.TokenType.INT_CONST) {
                 outputFile.write("<integerConstant>");
-                outputFile.write(tokenizer.intVal());
+                outputFile.write(String.valueOf(tokenizer.intVal()));
                 outputFile.write("</integerConstant>\n");
             } else if (tokenizer.tokenType() == Tokenizer.TokenType.STRING_CONST) {
                 outputFile.write("<stringConstant>");
@@ -65,6 +70,7 @@ public class TokenizerXMLTest {
         }
 
         outputFile.write("</tokens>");
+        outputFile.close();
     }
     public static void main(String[] args) throws IOException {
         if (args.length != 1) {
