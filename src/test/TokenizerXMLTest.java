@@ -32,8 +32,6 @@ public class TokenizerXMLTest {
         KEYMAP.put(Tokenizer.KeyWord.ELSE, "else");
         KEYMAP.put(Tokenizer.KeyWord.WHILE, "while");
         KEYMAP.put(Tokenizer.KeyWord.RETURN, "return");
-        KEYMAP.put(Tokenizer.KeyWord.STRING, "String");
-
     }
     private static void handleFile(String filename) throws IOException {
         Tokenizer tokenizer = new Tokenizer(filename);
