@@ -9,7 +9,7 @@ public class JackAnalyzer {
     private static void handleFile(String filename) throws IOException {
         Tokenizer tokenizer = new Tokenizer(filename);
         tokenizer.advance();
-        FileWriter outputFile = new FileWriter(filename.substring(0, filename.indexOf(".jack")) + "test" + ".xml", false);
+        FileWriter outputFile = new FileWriter(filename.substring(0, filename.indexOf(".jack")) + "test11" + ".xml", false);
 
         CompilationEngine compilationEngine = new CompilationEngine(tokenizer, outputFile);
         compilationEngine.compileClass();

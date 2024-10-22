@@ -29,6 +29,10 @@ public class SymbolTable {
     
     public void reset() {
         this.table = new HashMap<>();
+        indexMap.put(KIND.STATIC, 0);
+        indexMap.put(KIND.FIELD, 0);
+        indexMap.put(KIND.ARG, 0);
+        indexMap.put(KIND.VAR, 0);
     }
     
     public void define(String name, String type, KIND kind) {
@@ -44,7 +48,9 @@ public class SymbolTable {
     }
     
     public KIND kindOf(String name) {
-        return table.get(name).kind;
+        SymbolTableEntry entry = table.get(name);
+        if (entry == null) return KIND.NONE;
+        return entry.kind;
     }
     
     public String typeOf(String name) {
