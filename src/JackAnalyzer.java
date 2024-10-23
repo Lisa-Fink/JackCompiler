@@ -9,7 +9,7 @@ public class JackAnalyzer {
     private static void handleFile(String filename) throws IOException {
         Tokenizer tokenizer = new Tokenizer(filename);
         tokenizer.advance();
-        FileWriter outputFile = new FileWriter(filename.substring(0, filename.indexOf(".jack")) + "-T11" + ".vm", false);
+        FileWriter outputFile = new FileWriter(filename.substring(0, filename.indexOf(".jack")) + ".vm", false);
 
         CompilationEngine compilationEngine = new CompilationEngine(tokenizer, outputFile);
         compilationEngine.compileClass();
