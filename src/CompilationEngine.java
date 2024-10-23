@@ -9,6 +9,8 @@ public class CompilationEngine {
     Tokenizer tokenizer;
     SymbolTable classTable;
     SymbolTable subroutineTable;
+    VMWriter vmWriter;
+    String className;
 
     private static final Map<Tokenizer.KeyWord, String> KEYMAP = new HashMap<>();
     static {
@@ -35,26 +37,23 @@ public class CompilationEngine {
         KEYMAP.put(Tokenizer.KeyWord.RETURN, "return");
     }
 
-    public CompilationEngine(Tokenizer tokenizer, FileWriter output) throws IOException {
+    public CompilationEngine(Tokenizer tokenizer, FileWriter output) {
         this.output = output;
         this.tokenizer = tokenizer;
+        this.vmWriter = new VMWriter(output);
     }
 
     public void compileClass() throws IOException {
         this.classTable = new SymbolTable();
         this.subroutineTable = new SymbolTable();
 
-        output.write("<class>\n");
-
-        output.write("<keyword> " + KEYMAP.get(tokenizer.keyWord()) + " </keyword>\n");
+        // class
+        tokenizer.advance();
+        // className
+        this.className = tokenizer.identifier();
         tokenizer.advance();
 
-        output.write("<classIdentifierUsed> " + tokenizer.identifier() + " </classIdentifierUsed>\n");
-        tokenizer.advance();
-
-        output.write("<symbol> ");  // opening  {
-        output.write(tokenizer.symbol());
-        output.write(" </symbol>\n");
+        // opening  {
         tokenizer.advance();
 
         while (tokenizer.hasMoreTokens() &
@@ -71,12 +70,8 @@ public class CompilationEngine {
             compileSubroutine();
         }
 
-        output.write("<symbol> ");  // closing }
-        output.write(tokenizer.symbol());
-        output.write(" </symbol>\n");
+        // closing }
         tokenizer.advance();
-
-        output.write("</class>\n");
     }
 
     public void compileClassVarDec() throws IOException {
@@ -122,42 +117,47 @@ public class CompilationEngine {
     }
 
     public void compileSubroutine() throws IOException {
+        boolean isVoid = false;
+        String subroutineName;
         subroutineTable.reset();
-
-        output.write("<subroutineDec>\n");
+        boolean hasThis = false;
 
         // constructor/method/function
-        output.write("<keyword> " + KEYMAP.get(tokenizer.keyWord()) + " </keyword>\n");  // function/method
         // Add this to symbol table if method, don't do this for function or constructor
-        if (tokenizer.keyWord() == Tokenizer.KeyWord.METHOD)  subroutineTable.define("this", null, SymbolTable.KIND.ARG);
-        tokenizer.advance();
+        if (tokenizer.keyWord() == Tokenizer.KeyWord.METHOD)  {
+            subroutineTable.define("this", this.className, SymbolTable.KIND.ARG);
+            hasThis = true;
+        }
 
-        if (tokenizer.tokenType() == Tokenizer.TokenType.IDENTIFIER) {
-            // if constructor
-            // class type
-            output.write("<classIdentifier> " + tokenizer.identifier() + "</classIdentifier>\n");  // name
-             tokenizer.advance();
-
-            // "new"
-            output.write("<classIdentifierDef> " + tokenizer.identifier() + " </classIdentifierDef>\n"); // new
+        if (tokenizer.keyWord() == Tokenizer.KeyWord.CONSTRUCTOR) {
             tokenizer.advance();
+             // if constructor
+             // class type
+             tokenizer.advance();
+             // "new"
+             subroutineName = tokenizer.identifier();
+             tokenizer.advance();
         } else {
+            tokenizer.advance();
             // in a method or function
             // return type
-            output.write("<keyword> " + KEYMAP.get(tokenizer.keyWord()) + " </keyword>\n");  // return type
+            if (tokenizer.keyWord() == Tokenizer.KeyWord.VOID) isVoid = true;
             tokenizer.advance();
 
             // method/function name
-            output.write("<subroutineIdentifierUsed> " + tokenizer.identifier() + " </subroutineIdentifierUsed>\n"); // name
+            subroutineName = tokenizer.identifier();
             tokenizer.advance();
         }
 
-        writeSymbol();  // opening (
+        // opening (
         tokenizer.advance();
 
         compileParameterList();
+        int nArgs = subroutineTable.varCount(SymbolTable.KIND.ARG);
+        if (hasThis) nArgs--;
+        vmWriter.writeFunction(className + "." + subroutineName, nArgs);
 
-        writeSymbol();  // closing )
+        // closing )
         tokenizer.advance();
 
         compileSubroutineBody();
@@ -166,30 +166,23 @@ public class CompilationEngine {
     }
 
     public void compileParameterList() throws IOException {
-        output.write("<parameterList>\n");
         String type, name;
         // process 0 or more parameters
         while (tokenizer.tokenType() != Tokenizer.TokenType.SYMBOL & tokenizer.symbol() != ')') {
             // type
-            output.write("<keyword> " + KEYMAP.get(tokenizer.keyWord()) + " </keyword>\n");  // type
             type = KEYMAP.get(tokenizer.keyWord());
             tokenizer.advance();
             // name
             name = tokenizer.identifier();
             subroutineTable.define(name, type, SymbolTable.KIND.ARG);
-            output.write("<varIdentifierDef> " + tokenizer.identifier() + SymbolTable.KIND.ARG + subroutineTable.indexOf(name) + " </varIdentifierDef>\n");
 
             tokenizer.advance();
-//            handleIdentifier();
 
             // only if there is a ','
             if (tokenizer.symbol() != ')') {
-                writeSymbol();  // ending ; or ,
                 tokenizer.advance();
             }
         }
-
-        output.write("</parameterList>\n");
     }
 
     public void compileSubroutineBody() throws IOException {
