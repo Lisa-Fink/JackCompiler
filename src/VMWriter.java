@@ -17,13 +17,21 @@ public class VMWriter {
         SEGMENT_MAP.put(SEGMENT.TEMP, "temp");
     }
 
+    public static final Map<SymbolTable.KIND, SEGMENT> KIND_TO_SEGMENT = new HashMap<>();
+    static {
+        KIND_TO_SEGMENT.put(SymbolTable.KIND.STATIC, SEGMENT.STATIC);
+        KIND_TO_SEGMENT.put(SymbolTable.KIND.FIELD, SEGMENT.THIS);
+        KIND_TO_SEGMENT.put(SymbolTable.KIND.ARG, SEGMENT.ARGUMENT);
+        KIND_TO_SEGMENT.put(SymbolTable.KIND.VAR, SEGMENT.LOCAL);
+    }
+
     public enum ARITHMETIC_COMMAND {ADD, SUB, NEG, EQ, GT, LT, AND, OR, NOT};
 
     public static final Map<ARITHMETIC_COMMAND, String> ARITHMETIC_COMMAND_MAP = new HashMap<>();
     static {
         ARITHMETIC_COMMAND_MAP.put(ARITHMETIC_COMMAND.ADD, "add");
         ARITHMETIC_COMMAND_MAP.put(ARITHMETIC_COMMAND.SUB, "sub");
-        ARITHMETIC_COMMAND_MAP.put(ARITHMETIC_COMMAND.NEG, "new");
+        ARITHMETIC_COMMAND_MAP.put(ARITHMETIC_COMMAND.NEG, "neg");
         ARITHMETIC_COMMAND_MAP.put(ARITHMETIC_COMMAND.EQ, "eq");
         ARITHMETIC_COMMAND_MAP.put(ARITHMETIC_COMMAND.GT, "gt");
         ARITHMETIC_COMMAND_MAP.put(ARITHMETIC_COMMAND.LT, "lt");

@@ -11,6 +11,7 @@ public class CompilationEngine {
     SymbolTable subroutineTable;
     VMWriter vmWriter;
     String className;
+    int length;
 
     private static final Map<Tokenizer.KeyWord, String> KEYMAP = new HashMap<>();
     static {
@@ -161,8 +162,6 @@ public class CompilationEngine {
         tokenizer.advance();
 
         compileSubroutineBody();
-
-        output.write("</subroutineDec>\n");
     }
 
     public void compileParameterList() throws IOException {
@@ -186,9 +185,7 @@ public class CompilationEngine {
     }
 
     public void compileSubroutineBody() throws IOException {
-        output.write("<subroutineBody>\n");
-
-        writeSymbol();  // opening {
+        // opening {
         tokenizer.advance();
 
         while (tokenizer.tokenType() == Tokenizer.TokenType.KEYWORD &
@@ -198,34 +195,28 @@ public class CompilationEngine {
 
         compileStatements();
 
-        writeSymbol();  // closing }
+        // closing }
         tokenizer.advance();
-
-        output.write("</subroutineBody>\n");
     }
 
     public void compileVarDec() throws IOException {
         output.write("<varDec>\n");
         // var
-        output.write("<keyword> " + KEYMAP.get(tokenizer.keyWord()) + " </keyword>\n");  // var keyword
         tokenizer.advance();
         // type
         String type;
-        // can be a keyword or an identifier (if it's a class type)
+        // type can be a keyword or an identifier (if it's a class type)
         if (tokenizer.tokenType() == Tokenizer.TokenType.KEYWORD) {
             type = KEYMAP.get(tokenizer.keyWord());
-            output.write("<keyword> " + KEYMAP.get(tokenizer.keyWord()) + " </keyword>\n");  // type
             tokenizer.advance();
         } else {
             type = tokenizer.identifier();
-            output.write("<classIdentifierDef> " + tokenizer.identifier() + " </classIdentifierDef>\n");  // class type
             tokenizer.advance();
         }
         // name
         String name;
         name = tokenizer.identifier();
         subroutineTable.define(name, type, SymbolTable.KIND.VAR);
-        output.write("<varIdentifierDef> " + tokenizer.identifier() + SymbolTable.KIND.VAR + subroutineTable.indexOf(name) + " </varIdentifierDef>\n");  // varName
         tokenizer.advance();
 
         while (tokenizer.symbol() != ';') {
@@ -233,19 +224,14 @@ public class CompilationEngine {
             tokenizer.advance();
             name = tokenizer.identifier();
             subroutineTable.define(name, type, SymbolTable.KIND.VAR);
-            output.write("<varIdentifierDef> " + tokenizer.identifier() + SymbolTable.KIND.VAR + subroutineTable.indexOf(name) + " </varIdentifierDef>\n");  // varName
             tokenizer.advance();
         }
 
         writeSymbol();  // ;
         tokenizer.advance();
-
-        output.write("</varDec>\n");
     }
 
     public void compileStatements() throws IOException {
-        output.write("<statements>\n");
-
         while (tokenizer.tokenType() == Tokenizer.TokenType.KEYWORD) {
             if (tokenizer.keyWord() == Tokenizer.KeyWord.LET) {
                 compileLet();
@@ -259,8 +245,6 @@ public class CompilationEngine {
                 compileReturn();
             }
         }
-
-        output.write("</statements>\n");
     }
 
     public void compileLet () throws IOException {
@@ -358,37 +342,42 @@ public class CompilationEngine {
     }
 
     public void compileDo() throws IOException {
-        output.write("<doStatement>\n");
+        tokenizer.advance();  // do
 
-        output.write("<keyword> " + KEYMAP.get(tokenizer.keyWord()) + " </keyword>\n");  // do keyword
-        tokenizer.advance();
-
-        /// in either class/subroutine table or none if subroutine name
+        // find the type
+        String className = "";
+        // in either class/subroutine table or none if subroutine name
         if (classTable.kindOf(tokenizer.identifier()) != SymbolTable.KIND.NONE) {
+            // It's a class level variable
             output.write("<classIdentifierUsed>" + tokenizer.identifier() + classTable.kindOf(tokenizer.identifier()) + classTable.indexOf(tokenizer.identifier()) + "</classIdentifierUsed>");
         } else if (subroutineTable.kindOf(tokenizer.identifier()) != SymbolTable.KIND.NONE)
+            // It's a subroutine level variable
             output.write("<subroutineIdentifierUsed> " + tokenizer.identifier() + subroutineTable.kindOf(tokenizer.identifier()) + subroutineTable.indexOf(tokenizer.identifier()) + " </subroutineIdentifierUsed>\n");
         else {
-            output.write("<identifierUsed> " + tokenizer.identifier() + " </identifierUsed>\n");
-        }
-        tokenizer.advance();
-        if (tokenizer.symbol() == '.' | tokenizer.symbol() == '[') {
-            handleIdentifier();
-        } else {
-            writeSymbol();  // (
+            // It's the name of a class/function
+            className = tokenizer.identifier();
             tokenizer.advance();
-
-            compileExpressionList();
-
-            writeSymbol();  // )
-            tokenizer.advance();
+            if (tokenizer.symbol() == '.') {
+                tokenizer.advance();  // .
+                className += '.' + tokenizer.stringVal();
+                tokenizer.advance(); // subroutine name
+            }
         }
+        // TODO: need to handle array?
 
-        writeSymbol();  // ;
+        // (
         tokenizer.advance();
 
+        compileExpressionList();
 
-        output.write("</doStatement>\n");
+        // )
+        tokenizer.advance();
+        vmWriter.writeCall(className, this.length);
+        // TODO: is this correct? using do always disregard return?
+        vmWriter.writePop(VMWriter.SEGMENT.TEMP, 0);
+
+        // ;
+        tokenizer.advance();
     }
 
     private void handleIdentifier() throws IOException {
@@ -424,19 +413,18 @@ public class CompilationEngine {
     }
 
     public void compileReturn() throws IOException {
-        output.write("<returnStatement>\n");
-
-        output.write("<keyword> " + KEYMAP.get(tokenizer.keyWord()) + " </keyword>\n");  // return keyword
+        // See if it is returning a value or not
+        // "return"
         tokenizer.advance();
-
+        boolean isVoid = tokenizer.tokenType() == Tokenizer.TokenType.SYMBOL & tokenizer.symbol() == ';';
         while (tokenizer.tokenType() != Tokenizer.TokenType.SYMBOL & tokenizer.symbol() != ';') {
             compileExpression();
         }
 
-        writeSymbol();  // ;
+        // ;
         tokenizer.advance();
-
-        output.write("</returnStatement>\n");
+        if (isVoid) vmWriter.writePush(VMWriter.SEGMENT.CONSTANT, 0);
+        vmWriter.writeReturn();
     }
     
     private void writeSymbol() throws  IOException {
@@ -450,7 +438,6 @@ public class CompilationEngine {
     }
 
     public void compileExpression() throws IOException {
-        output.write("<expression>\n");
         // first term
         compileTerm();
 
@@ -459,73 +446,125 @@ public class CompilationEngine {
                 (tokenizer.symbol() == '+' | tokenizer.symbol() == '-' | tokenizer.symbol() == '*' |
                         tokenizer.symbol() == '/' | tokenizer.symbol() == '&' | tokenizer.symbol() == '|' |
                         tokenizer.symbol() == '<' | tokenizer.symbol() == '>' | tokenizer.symbol() == '=')) {
-            writeSymbol();
+            char symbol = tokenizer.symbol();
             tokenizer.advance();
             compileTerm();
+            switch (symbol) {
+                case '*' -> {
+                    vmWriter.writeCall("Math.multiply", 2);
+                    return;
+                }
+                case '/' -> {
+                    vmWriter.writeCall("Math.divide", 2);
+                    return;
+                }
+                case '+' -> {
+                    vmWriter.writeArithmetic(VMWriter.ARITHMETIC_COMMAND.ADD);
+                    return;
+                }
+                case '-' -> {
+                    vmWriter.writeArithmetic(VMWriter.ARITHMETIC_COMMAND.SUB);
+                    return;
+                }
+                case '=' -> {
+                    vmWriter.writeArithmetic(VMWriter.ARITHMETIC_COMMAND.EQ);
+                    return;
+                }
+                case '>' -> {
+                    vmWriter.writeArithmetic(VMWriter.ARITHMETIC_COMMAND.GT);
+                    return;
+                }
+                case '<' -> {
+                    vmWriter.writeArithmetic(VMWriter.ARITHMETIC_COMMAND.LT);
+                    return;
+                }
+                case '&' -> {
+                    vmWriter.writeArithmetic(VMWriter.ARITHMETIC_COMMAND.AND);
+                    return;
+                }
+                case '|' -> {
+                    vmWriter.writeArithmetic(VMWriter.ARITHMETIC_COMMAND.OR);
+                    return;
+                }
+                case '~' -> {
+                    vmWriter.writeArithmetic(VMWriter.ARITHMETIC_COMMAND.NOT);
+                    return;
+                }
+            }
         }
-
-        output.write("</expression>\n");
     }
 
     public void compileTerm() throws IOException {
-        output.write("<term>\n");
-
         switch (tokenizer.tokenType()) {
             case INT_CONST ->  {
-                output.write("<integerConstant> " + tokenizer.intVal() + " </integerConstant>\n");
+                vmWriter.writePush(VMWriter.SEGMENT.CONSTANT, tokenizer.intVal());
                 tokenizer.advance();
             }
             case STRING_CONST -> {
+                // TODO: HOW?
                 output.write("<stringConstant> " + tokenizer.stringVal() + " </stringConstant>\n");
                 tokenizer.advance();
             }
             case KEYWORD -> {
                 // Keyword Constant true | false | null | this
-                output.write("<keyword> " + KEYMAP.get(tokenizer.keyWord()) + " </keyword>\n");  // do keyword
+                if (tokenizer.keyWord() == Tokenizer.KeyWord.TRUE) {
+                    vmWriter.writePush(VMWriter.SEGMENT.CONSTANT, 1);
+                    vmWriter.writeArithmetic(VMWriter.ARITHMETIC_COMMAND.NEG);
+                } else {
+                    vmWriter.writePush(VMWriter.SEGMENT.CONSTANT, 0);
+                }
                 tokenizer.advance();
             }
             case IDENTIFIER -> {
                 // in either class/subroutine table or none if subroutine name
+                VMWriter.SEGMENT segment;
+                int index;
                 if (classTable.kindOf(tokenizer.identifier()) != SymbolTable.KIND.NONE) {
-                    output.write("<classIdentifierUsed>" + tokenizer.identifier() + classTable.kindOf(tokenizer.identifier()) + classTable.indexOf(tokenizer.identifier()) + "</classIdentifierUsed>");
-                } else if (subroutineTable.kindOf(tokenizer.identifier()) != SymbolTable.KIND.NONE)
-                output.write("<subroutineIdentifierUsed> " + tokenizer.identifier() + subroutineTable.kindOf(tokenizer.identifier()) + subroutineTable.indexOf(tokenizer.identifier()) + " </subroutineIdentifierUsed>\n");
+                    // get kind and index
+                    segment = VMWriter.KIND_TO_SEGMENT.get(classTable.kindOf(tokenizer.identifier()));
+                    index = classTable.indexOf(tokenizer.identifier());
+                    vmWriter.writePush(segment, index);
+                } else if (subroutineTable.kindOf(tokenizer.identifier()) != SymbolTable.KIND.NONE) {
+                    segment = VMWriter.KIND_TO_SEGMENT.get(subroutineTable.kindOf(tokenizer.identifier()));
+                    index = subroutineTable.indexOf(tokenizer.identifier());
+                    vmWriter.writePush(segment, index);
+                }
                 else {
+                    // TODO: Does this happen?
                     output.write("<identifierUsed> " + tokenizer.identifier() + " </identifierUsed>\n");
                 }
                 tokenizer.advance();
-                handleIdentifier();
+                // TODO: handle complex identifiers subroutine calls or arrays
+//                handleIdentifier();
             }
             case SYMBOL -> {
                 if (tokenizer.symbol() == '(') {
-                    writeSymbol();  // (
+                    // (
                     tokenizer.advance();
                     compileExpression();
-                    writeSymbol();  // )
+                    // )
                     tokenizer.advance();
                 } else {
-                    writeSymbol();  // unary op
+                    // unary op
                     tokenizer.advance();
-
                     compileTerm();
+                    vmWriter.writeArithmetic(VMWriter.ARITHMETIC_COMMAND.NEG);
                 }
             }
         }
-        output.write("</term>\n");
     }
 
     public void compileExpressionList() throws IOException {
-        output.write("<expressionList>\n");
-
+        this.length = 0;
         if (tokenizer.tokenType() != Tokenizer.TokenType.SYMBOL | tokenizer.symbol() == '(') {
             compileExpression();
+            this.length ++;
         }
         while (tokenizer.tokenType() == Tokenizer.TokenType.SYMBOL & tokenizer.symbol() == ',') {
-            writeSymbol();  // ,
+            // ,
+            this.length ++;
             tokenizer.advance();
-
             compileExpression();
         }
-        output.write("</expressionList>\n");
     }
 }
