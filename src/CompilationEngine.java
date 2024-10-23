@@ -345,41 +345,9 @@ public class CompilationEngine {
 
     public void compileDo() throws IOException {
         tokenizer.advance();  // do
-
-        // find the type
-        String name = "";
-        // in either class/subroutine table or none if subroutine name
-        if (classTable.kindOf(tokenizer.identifier()) != SymbolTable.KIND.NONE) {
-            // It's a class level variable
-            output.write("<classIdentifierUsed>" + tokenizer.identifier() + classTable.kindOf(tokenizer.identifier()) + classTable.indexOf(tokenizer.identifier()) + "</classIdentifierUsed>");
-        } else if (subroutineTable.kindOf(tokenizer.identifier()) != SymbolTable.KIND.NONE)
-            // It's a subroutine level variable
-            output.write("<subroutineIdentifierUsed> " + tokenizer.identifier() + subroutineTable.kindOf(tokenizer.identifier()) + subroutineTable.indexOf(tokenizer.identifier()) + " </subroutineIdentifierUsed>\n");
-        else {
-            // It's the name of a class/function
-            name = tokenizer.identifier();
-            tokenizer.advance();
-            if (tokenizer.symbol() == '.') {
-                tokenizer.advance();  // .
-                name += '.' + tokenizer.stringVal();
-                tokenizer.advance(); // subroutine name
-            }
-        }
-        // TODO: need to handle array?
-
-        // (
-        tokenizer.advance();
-
-        compileExpressionList();
-
-        // )
-        tokenizer.advance();
-        vmWriter.writeCall(name, this.length);
-        // TODO: is this correct? using do always disregard return?
+        compileExpression();
+        tokenizer.advance();  // ;
         vmWriter.writePop(VMWriter.SEGMENT.TEMP, 0);
-
-        // ;
-        tokenizer.advance();
     }
 
     private void handleIdentifier() throws IOException {
