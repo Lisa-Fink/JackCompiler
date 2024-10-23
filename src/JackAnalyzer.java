@@ -13,7 +13,6 @@ public class JackAnalyzer {
 
         CompilationEngine compilationEngine = new CompilationEngine(tokenizer, outputFile);
         compilationEngine.compileClass();
-        outputFile.close();
     }
 
         public static void main(String[] args) throws IOException {

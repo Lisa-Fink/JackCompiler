@@ -73,6 +73,7 @@ public class CompilationEngine {
 
         // closing }
         tokenizer.advance();
+        vmWriter.close();
     }
 
     public void compileClassVarDec() throws IOException {
