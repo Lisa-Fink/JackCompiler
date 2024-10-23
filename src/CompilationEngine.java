@@ -13,6 +13,7 @@ public class CompilationEngine {
     String className;
     int length;
     int label;
+    String functionName;
 
     private static final Map<Tokenizer.KeyWord, String> KEYMAP = new HashMap<>();
     static {
@@ -156,10 +157,9 @@ public class CompilationEngine {
         tokenizer.advance();
 
         compileParameterList();
-        int nArgs = subroutineTable.varCount(SymbolTable.KIND.ARG);
-        if (hasThis) nArgs--;
-        vmWriter.writeFunction(className + "." + subroutineName, nArgs);
 
+        // save this to call after getting num vars for local
+        this.functionName = className + "." + subroutineName;
         // closing )
         tokenizer.advance();
 
@@ -189,12 +189,13 @@ public class CompilationEngine {
     public void compileSubroutineBody() throws IOException {
         // opening {
         tokenizer.advance();
-
+        int curLength = 0;
         while (tokenizer.tokenType() == Tokenizer.TokenType.KEYWORD &
                 tokenizer.keyWord() == Tokenizer.KeyWord.VAR) {
             compileVarDec();
+            curLength += this.length;
         }
-
+        vmWriter.writeFunction(this.functionName, curLength);
         compileStatements();
 
         // closing }
@@ -202,6 +203,7 @@ public class CompilationEngine {
     }
 
     public void compileVarDec() throws IOException {
+        this.length = 0;
         // var
         tokenizer.advance();
         // type
@@ -217,6 +219,7 @@ public class CompilationEngine {
         // name
         String name;
         name = tokenizer.identifier();
+        this.length++;
         subroutineTable.define(name, type, SymbolTable.KIND.VAR);
         tokenizer.advance();
 
@@ -224,6 +227,7 @@ public class CompilationEngine {
             // ,
             tokenizer.advance();
             name = tokenizer.identifier();
+            this.length++;
             subroutineTable.define(name, type, SymbolTable.KIND.VAR);
             tokenizer.advance();
         }
@@ -320,28 +324,29 @@ public class CompilationEngine {
     }
 
     public void compileWhile () throws IOException {
-        output.write("<whileStatement>\n");
+        String l1 = "L" + this.label++;
+        String l2 = "L" + this.label++;
 
-        output.write("<keyword> " + KEYMAP.get(tokenizer.keyWord()) + " </keyword>\n");  // while keyword
+        tokenizer.advance();    // while
+
+        // (
         tokenizer.advance();
-
-        writeSymbol();  // (
-        tokenizer.advance();
-
+        vmWriter.writeLabel(l1);
         compileExpression();
+        vmWriter.writeArithmetic(VMWriter.ARITHMETIC_COMMAND.NOT);
+        vmWriter.writeIf(l2);
 
-        writeSymbol();  // )
+        // )
         tokenizer.advance();
 
-        writeSymbol();  // {
+        // {
         tokenizer.advance();
 
         compileStatements();
-
-        writeSymbol();  // }
+        vmWriter.writeGoto(l1);
+        // }
         tokenizer.advance();
-
-        output.write("</whileStatement>\n");
+        vmWriter.writeLabel(l2);
     }
 
     public void compileDo() throws IOException {
@@ -481,6 +486,8 @@ public class CompilationEngine {
                 if (tokenizer.keyWord() == Tokenizer.KeyWord.TRUE) {
                     vmWriter.writePush(VMWriter.SEGMENT.CONSTANT, 1);
                     vmWriter.writeArithmetic(VMWriter.ARITHMETIC_COMMAND.NEG);
+                } else if (tokenizer.keyWord() == Tokenizer.KeyWord.THIS) {
+                    vmWriter.writePush(VMWriter.SEGMENT.POINTER, 0);
                 } else {
                     vmWriter.writePush(VMWriter.SEGMENT.CONSTANT, 0);
                 }
@@ -534,8 +541,12 @@ public class CompilationEngine {
                     compileExpression();
                     // )
                     tokenizer.advance();
-                } else {
+                } else if (tokenizer.symbol() == '-') {
                     // unary op
+                    tokenizer.advance();
+                    compileTerm();
+                    vmWriter.writeArithmetic(VMWriter.ARITHMETIC_COMMAND.NEG);
+                } else {
                     tokenizer.advance();
                     compileTerm();
                     vmWriter.writeArithmetic(VMWriter.ARITHMETIC_COMMAND.NOT);
