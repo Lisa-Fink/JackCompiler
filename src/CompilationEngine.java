@@ -201,7 +201,6 @@ public class CompilationEngine {
     }
 
     public void compileVarDec() throws IOException {
-        output.write("<varDec>\n");
         // var
         tokenizer.advance();
         // type
@@ -221,14 +220,14 @@ public class CompilationEngine {
         tokenizer.advance();
 
         while (tokenizer.symbol() != ';') {
-            writeSymbol();  // ,
+            // ,
             tokenizer.advance();
             name = tokenizer.identifier();
             subroutineTable.define(name, type, SymbolTable.KIND.VAR);
             tokenizer.advance();
         }
 
-        writeSymbol();  // ;
+        // ;
         tokenizer.advance();
     }
 
@@ -249,33 +248,35 @@ public class CompilationEngine {
     }
 
     public void compileLet () throws IOException {
-        output.write("<letStatement>\n");
         // let
-        output.write("<keyword> " + KEYMAP.get(tokenizer.keyWord()) + " </keyword>\n");  // let keyword
         tokenizer.advance();
 
         // var or arg
         // either in class or subroutine table
         // check class table
+        VMWriter.SEGMENT assigneeSegment;
+        int index;
         if (classTable.kindOf(tokenizer.identifier()) != SymbolTable.KIND.NONE) {
-            output.write("<identifierUsed> " + tokenizer.identifier() + classTable.kindOf(tokenizer.identifier()) + classTable.indexOf(tokenizer.identifier()) + " </identifierUsed>\n");  // varName
-
+            assigneeSegment = VMWriter.KIND_TO_SEGMENT.get(classTable.kindOf(tokenizer.identifier()));
+            index = classTable.indexOf(tokenizer.identifier());
         } else {
-            output.write("<identifierUsed> " + tokenizer.identifier() + subroutineTable.kindOf(tokenizer.identifier()) + subroutineTable.indexOf(tokenizer.identifier()) + " </identifierUsed>\n");  // varName
+            assigneeSegment = VMWriter.KIND_TO_SEGMENT.get(subroutineTable.kindOf(tokenizer.identifier()));
+            index = subroutineTable.indexOf(tokenizer.identifier());
         }
+
         tokenizer.advance();
-        handleIdentifier();
+        // TODO: does this need to handle complex identifiers with . or []?
+//        handleIdentifier();
 
 
-        writeSymbol();  // =
+        // =
         tokenizer.advance();
 
         compileExpression();
+        vmWriter.writePop(assigneeSegment, index);
 
-        writeSymbol();  // ;
+        // ;
         tokenizer.advance();
-
-        output.write("</letStatement>\n");
     }
 
     public void compileIf () throws IOException {
@@ -346,7 +347,7 @@ public class CompilationEngine {
         tokenizer.advance();  // do
 
         // find the type
-        String className = "";
+        String name = "";
         // in either class/subroutine table or none if subroutine name
         if (classTable.kindOf(tokenizer.identifier()) != SymbolTable.KIND.NONE) {
             // It's a class level variable
@@ -356,11 +357,11 @@ public class CompilationEngine {
             output.write("<subroutineIdentifierUsed> " + tokenizer.identifier() + subroutineTable.kindOf(tokenizer.identifier()) + subroutineTable.indexOf(tokenizer.identifier()) + " </subroutineIdentifierUsed>\n");
         else {
             // It's the name of a class/function
-            className = tokenizer.identifier();
+            name = tokenizer.identifier();
             tokenizer.advance();
             if (tokenizer.symbol() == '.') {
                 tokenizer.advance();  // .
-                className += '.' + tokenizer.stringVal();
+                name += '.' + tokenizer.stringVal();
                 tokenizer.advance(); // subroutine name
             }
         }
@@ -373,7 +374,7 @@ public class CompilationEngine {
 
         // )
         tokenizer.advance();
-        vmWriter.writeCall(className, this.length);
+        vmWriter.writeCall(name, this.length);
         // TODO: is this correct? using do always disregard return?
         vmWriter.writePop(VMWriter.SEGMENT.TEMP, 0);
 
@@ -525,16 +526,35 @@ public class CompilationEngine {
                     segment = VMWriter.KIND_TO_SEGMENT.get(classTable.kindOf(tokenizer.identifier()));
                     index = classTable.indexOf(tokenizer.identifier());
                     vmWriter.writePush(segment, index);
+                    tokenizer.advance();
                 } else if (subroutineTable.kindOf(tokenizer.identifier()) != SymbolTable.KIND.NONE) {
                     segment = VMWriter.KIND_TO_SEGMENT.get(subroutineTable.kindOf(tokenizer.identifier()));
                     index = subroutineTable.indexOf(tokenizer.identifier());
                     vmWriter.writePush(segment, index);
+                    tokenizer.advance();
                 }
                 else {
-                    // TODO: Does this happen?
-                    output.write("<identifierUsed> " + tokenizer.identifier() + " </identifierUsed>\n");
+                    // TODO: check for more complex, like x = Class then x.method()
+                    // need to call the class method/function
+                    // It's the name of a class/function
+                    String name = tokenizer.identifier();
+                    tokenizer.advance();
+                    if (tokenizer.symbol() == '.') {
+                        tokenizer.advance();  // .
+                        name += '.' + tokenizer.stringVal();
+                        tokenizer.advance(); // subroutine name
+
+                        // (
+                        tokenizer.advance();
+
+                        compileExpressionList();
+
+                        // )
+                        tokenizer.advance();
+                        vmWriter.writeCall(name, this.length);
+                    }
+
                 }
-                tokenizer.advance();
                 // TODO: handle complex identifiers subroutine calls or arrays
 //                handleIdentifier();
             }
