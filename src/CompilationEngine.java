@@ -12,6 +12,7 @@ public class CompilationEngine {
     VMWriter vmWriter;
     String className;
     int length;
+    int label;
 
     private static final Map<Tokenizer.KeyWord, String> KEYMAP = new HashMap<>();
     static {
@@ -280,42 +281,42 @@ public class CompilationEngine {
     }
 
     public void compileIf () throws IOException {
-        output.write("<ifStatement>\n");
+        String l1 = "L" + (this.label++);
+        String l2 = "L" + (this.label++);
 
-        output.write("<keyword> " + KEYMAP.get(tokenizer.keyWord()) + " </keyword>\n");  // if keyword
         tokenizer.advance();
 
-        writeSymbol();  // (
+        // (
         tokenizer.advance();
 
         compileExpression();
-
-        writeSymbol();  // )
+        vmWriter.writeArithmetic(VMWriter.ARITHMETIC_COMMAND.NOT);
+        vmWriter.writeIf(l1);
+        // )
         tokenizer.advance();
 
-        writeSymbol();  // {
+        // {
         tokenizer.advance();
 
         compileStatements();
 
-        writeSymbol();  // }
+        // }
         tokenizer.advance();
-
-        // 0 or more else statements
-        while (tokenizer.tokenType() == Tokenizer.TokenType.KEYWORD & tokenizer.keyWord() == Tokenizer.KeyWord.ELSE) {
-            output.write("<keyword> " + KEYMAP.get(tokenizer.keyWord()) + " </keyword>\n");  // else keyword
+        vmWriter.writeGoto(l2);
+        vmWriter.writeLabel(l1);
+        // 0 or 1 else statements
+        if (tokenizer.tokenType() == Tokenizer.TokenType.KEYWORD & tokenizer.keyWord() == Tokenizer.KeyWord.ELSE) {
             tokenizer.advance();
 
-            writeSymbol();  // {
+            // {
             tokenizer.advance();
 
             compileStatements();
 
-            writeSymbol();  // }
+            // }
             tokenizer.advance();
         }
-
-        output.write("</ifStatement>\n");
+        vmWriter.writeLabel(l2);
     }
 
     public void compileWhile () throws IOException {
@@ -537,7 +538,7 @@ public class CompilationEngine {
                     // unary op
                     tokenizer.advance();
                     compileTerm();
-                    vmWriter.writeArithmetic(VMWriter.ARITHMETIC_COMMAND.NEG);
+                    vmWriter.writeArithmetic(VMWriter.ARITHMETIC_COMMAND.NOT);
                 }
             }
         }
