@@ -79,8 +79,6 @@ public class CompilationEngine {
     }
 
     public void compileClassVarDec() throws IOException {
-        output.write("<classVarDec>\n");
-
         // field or static
         SymbolTable.KIND kind;
         if (Objects.equals(KEYMAP.get(tokenizer.keyWord()), "field")) {
@@ -88,18 +86,16 @@ public class CompilationEngine {
         } else {
             kind = SymbolTable.KIND.STATIC;
         }
-        output.write("<keyword> " + KEYMAP.get(tokenizer.keyWord()) + " </keyword>\n");  // field/static
-        tokenizer.advance();
+        tokenizer.advance();  // field or static
 
         // type
         String type;
         // can be a keyword or an identifier (if it's a class type)
         if (tokenizer.tokenType() == Tokenizer.TokenType.KEYWORD) {
-            output.write("<keyword> " + KEYMAP.get(tokenizer.keyWord()) + " </keyword>\n");  // type
             type = KEYMAP.get(tokenizer.keyWord());
             tokenizer.advance();
         } else {
-            output.write("<classIdentifierDef> " + tokenizer.identifier() + " </classIdentifierDef>\n");  // class type
+            // class type
             type = tokenizer.identifier();
             tokenizer.advance();
         }
@@ -108,29 +104,23 @@ public class CompilationEngine {
         do {
             name = tokenizer.identifier();
             classTable.define(name, type, kind);
-            output.write("<fieldStaticIdentifierDef> " + tokenizer.identifier() + classTable.kindOf(name) + classTable.indexOf(name) + " </fieldStaticIdentifierDef>\n");
             tokenizer.advance();
 
 
-            writeSymbol();  // ending ; or ,
+            // ending ; or ,
             last = tokenizer.symbol();
             tokenizer.advance();
         } while (last == ',');
-
-        output.write("</classVarDec>\n");
     }
 
     public void compileSubroutine() throws IOException {
-        boolean isVoid = false;
         String subroutineName;
         subroutineTable.reset();
-        boolean hasThis = false;
 
         // constructor/method/function
         // Add this to symbol table if method, don't do this for function or constructor
         if (tokenizer.keyWord() == Tokenizer.KeyWord.METHOD)  {
             subroutineTable.define("this", this.className, SymbolTable.KIND.ARG);
-            hasThis = true;
         }
 
         if (tokenizer.keyWord() == Tokenizer.KeyWord.CONSTRUCTOR) {
@@ -141,11 +131,12 @@ public class CompilationEngine {
              // "new"
              subroutineName = tokenizer.identifier();
              tokenizer.advance();
+
         } else {
             tokenizer.advance();
             // in a method or function
+
             // return type
-            if (tokenizer.keyWord() == Tokenizer.KeyWord.VOID) isVoid = true;
             tokenizer.advance();
 
             // method/function name
@@ -160,6 +151,7 @@ public class CompilationEngine {
 
         // save this to call after getting num vars for local
         this.functionName = className + "." + subroutineName;
+
         // closing )
         tokenizer.advance();
 
@@ -196,6 +188,24 @@ public class CompilationEngine {
             curLength += this.length;
         }
         vmWriter.writeFunction(this.functionName, curLength);
+
+        // handle constructor or method
+        // if method, this is in symbol table
+        if (subroutineTable.kindOf("this") != SymbolTable.KIND.NONE) {
+            // need to set THIS, which was passed as the first arg
+            vmWriter.writePush(VMWriter.SEGMENT.ARGUMENT, 0);
+            vmWriter.writePop(VMWriter.SEGMENT.POINTER, 0);
+        } else if (this.functionName.endsWith(".new")) {
+            // constructor
+            // will need to allocate memory for this object
+            // need a word for each field
+            // and set THIS to the new base address
+            int numFields = classTable.varCount(SymbolTable.KIND.FIELD);
+            vmWriter.writePush(VMWriter.SEGMENT.CONSTANT, numFields);
+            vmWriter.writeCall("Memory.alloc", 1);
+            vmWriter.writePop(VMWriter.SEGMENT.POINTER, 0);
+        }
+
         compileStatements();
 
         // closing }
@@ -471,7 +481,8 @@ public class CompilationEngine {
     }
 
     public void compileTerm() throws IOException {
-        switch (tokenizer.tokenType()) {
+        Tokenizer.TokenType tokenType = tokenizer.tokenType();
+        switch (tokenType) {
             case INT_CONST ->  {
                 vmWriter.writePush(VMWriter.SEGMENT.CONSTANT, tokenizer.intVal());
                 tokenizer.advance();
@@ -494,45 +505,104 @@ public class CompilationEngine {
                 tokenizer.advance();
             }
             case IDENTIFIER -> {
-                // in either class/subroutine table or none if subroutine name
-                VMWriter.SEGMENT segment;
-                int index;
-                if (classTable.kindOf(tokenizer.identifier()) != SymbolTable.KIND.NONE) {
-                    // get kind and index
-                    segment = VMWriter.KIND_TO_SEGMENT.get(classTable.kindOf(tokenizer.identifier()));
-                    index = classTable.indexOf(tokenizer.identifier());
-                    vmWriter.writePush(segment, index);
-                    tokenizer.advance();
-                } else if (subroutineTable.kindOf(tokenizer.identifier()) != SymbolTable.KIND.NONE) {
-                    segment = VMWriter.KIND_TO_SEGMENT.get(subroutineTable.kindOf(tokenizer.identifier()));
-                    index = subroutineTable.indexOf(tokenizer.identifier());
-                    vmWriter.writePush(segment, index);
-                    tokenizer.advance();
-                }
-                else {
-                    // TODO: check for more complex, like x = Class then x.method()
-                    // need to call the class method/function
-                    // It's the name of a class/function
-                    String name = tokenizer.identifier();
-                    tokenizer.advance();
-                    if (tokenizer.symbol() == '.') {
-                        tokenizer.advance();  // .
-                        name += '.' + tokenizer.stringVal();
-                        tokenizer.advance(); // subroutine name
+                // either a normal variable, a variable.method() call, a method() call
+                // from in the class instance, a Classname.function() call
 
-                        // (
-                        tokenizer.advance();
+                // get current identifier
+                // this can be the variable name, method() name or Classname
+                String name = tokenizer.identifier();
 
+                // check for '.'
+                tokenizer.advance();
+                if (tokenizer.tokenType() == Tokenizer.TokenType.SYMBOL &
+                        tokenizer.symbol() == '.') {
+                    // If there is a dot, it is either variable.method() or
+                    // Classname.function()
+                    String first = String.valueOf(name.charAt(0));
+                    if (first.equals(first.toUpperCase())) {
+                        // It has a capital letter, so it's a Classname.function()
+                        tokenizer.advance(); // .
+                        String functionName = tokenizer.identifier();
+                        tokenizer.advance(); // funcName
+                        tokenizer.advance(); // (
                         compileExpressionList();
+                        tokenizer.advance(); // )
+                        vmWriter.writeCall(name + "." + functionName, this.length);
+                    } else {
+                        // It's variable.method()
+                        // need to replace variable with the Classname, and push address for this
+                        String curClassName;
+                        SymbolTable.KIND kind;
+                        int index;
+                        if (classTable.kindOf(name) != SymbolTable.KIND.NONE) {
+                            // It's a class variable
+                            kind = classTable.kindOf(name);
+                            curClassName = classTable.typeOf(name);
+                            index = classTable.indexOf(name);
+                        } else {
+                            // subroutine variable
+                            kind = subroutineTable.kindOf(name);
+                            curClassName = subroutineTable.typeOf(name);
+                            index = subroutineTable.indexOf(name);
+                        }
+                        tokenizer.advance(); // .
+                        String methodName = tokenizer.identifier();
+                        tokenizer.advance(); // methodName
+                        tokenizer.advance(); // (
 
-                        // )
-                        tokenizer.advance();
-                        vmWriter.writeCall(name, this.length);
+                        // before pushing args and calling method, which changes pointer,
+                        // save current pointer to restore later
+                        // save current pointer before calling a method
+                        vmWriter.writePush(VMWriter.SEGMENT.POINTER, 0);
+
+                        // before getting args, push this, so it becomes arg 0 for the method
+                        vmWriter.writePush(VMWriter.KIND_TO_SEGMENT.get(kind), index);
+                        compileExpressionList();
+                        tokenizer.advance(); // )
+
+                        vmWriter.writeCall(curClassName + "." + methodName, this.length + 1);
+                        // return val is first on stack, but need to restore pointer
+                        vmWriter.writePop(VMWriter.SEGMENT.TEMP, 0);
+                        vmWriter.writePop(VMWriter.SEGMENT.POINTER, 0);  // restore pointer
+                        vmWriter.writePush(VMWriter.SEGMENT.TEMP, 0);
                     }
 
+                } else {
+                    // There is no dot, so it is either normal variable or
+                    // subroutine method() from same class instance
+
+                    // We know there's no dot, but there could be a ( if it's a method
+                    if (tokenizer.tokenType() == Tokenizer.TokenType.SYMBOL &
+                            tokenizer.symbol() == '(') {
+                        // It's a method call from this same instance
+                        // need to get Classname and push this
+                        tokenizer.advance(); // (
+
+                        // before getting args, push this, so it becomes arg 0 for the method
+                        vmWriter.writePush(VMWriter.SEGMENT.POINTER, 0);   // this is arg 0
+                        compileExpressionList();
+                        tokenizer.advance(); // )
+
+                        vmWriter.writeCall(className + "." + name, this.length + 1);
+
+                    } else {
+                        // TODO: could also be array?
+                        // This is just a variable
+                        // push it
+                        SymbolTable.KIND kind;
+                        int index;
+                        if (classTable.kindOf(name) != SymbolTable.KIND.NONE) {
+                            // It's a class variable
+                            kind = classTable.kindOf(name);
+                            index = classTable.indexOf(name);
+                        } else {
+                            // subroutine variable
+                            kind = subroutineTable.kindOf(name);
+                            index = subroutineTable.indexOf(name);
+                        }
+                        vmWriter.writePush(VMWriter.KIND_TO_SEGMENT.get(kind), index);
+                    }
                 }
-                // TODO: handle complex identifiers subroutine calls or arrays
-//                handleIdentifier();
             }
             case SYMBOL -> {
                 if (tokenizer.symbol() == '(') {
