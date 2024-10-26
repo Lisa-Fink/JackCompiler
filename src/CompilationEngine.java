@@ -271,27 +271,52 @@ public class CompilationEngine {
         // check class table
         VMWriter.SEGMENT assigneeSegment;
         int index;
+        String type;
+        String varName = tokenizer.identifier();
         if (classTable.kindOf(tokenizer.identifier()) != SymbolTable.KIND.NONE) {
-            assigneeSegment = VMWriter.KIND_TO_SEGMENT.get(classTable.kindOf(tokenizer.identifier()));
-            index = classTable.indexOf(tokenizer.identifier());
+            assigneeSegment = VMWriter.KIND_TO_SEGMENT.get(classTable.kindOf(varName));
+            index = classTable.indexOf(varName);
+            type = classTable.typeOf(varName);
         } else {
-            assigneeSegment = VMWriter.KIND_TO_SEGMENT.get(subroutineTable.kindOf(tokenizer.identifier()));
-            index = subroutineTable.indexOf(tokenizer.identifier());
+            assigneeSegment = VMWriter.KIND_TO_SEGMENT.get(subroutineTable.kindOf(varName));
+            index = subroutineTable.indexOf(varName);
+            type = subroutineTable.typeOf(varName);
         }
+        tokenizer.advance(); // varName
+        // Check if it's an Array and it is indexing. Skips this if just reassigning the variable to a different array
+        // arr = Array.new()
+        if (Objects.equals(type, "Array") & tokenizer.tokenType() == Tokenizer.TokenType.SYMBOL &
+                tokenizer.symbol() == '[') {
 
-        tokenizer.advance();
-        // TODO: does this need to handle complex identifiers with . or []?
-//        handleIdentifier();
+            // push address of a[i] to stack
+            // don't use handleIdentifier, because it will push the value at a[i] not the address
+            vmWriter.writePush(assigneeSegment, index);     // base addr a
+            // now we need to i
+            tokenizer.advance();    // [
+            compileExpression();
+            vmWriter.writeArithmetic(VMWriter.ARITHMETIC_COMMAND.ADD);  // top of stack has addr arr[i]
+            tokenizer.advance();    // ]
 
+            tokenizer.advance();    // =
 
-        // =
-        tokenizer.advance();
+            compileExpression();    // handles right side
 
+            // the top of the stack has the right side arr[i] = rightside
+            // we need the next element on the stack which is the address for arr[i]
+            // store right side in temp
+            vmWriter.writePop(VMWriter.SEGMENT.TEMP, 0);    // temp[0] = right side, top of stack is addr arr[i]
+            vmWriter.writePop(VMWriter.SEGMENT.POINTER, 1); // THAT points to addr arr[i]
+            vmWriter.writePush(VMWriter.SEGMENT.TEMP, 0);   // place right side back to top of stack
+            vmWriter.writePop(VMWriter.SEGMENT.THAT, 0);    // arr[i] = right side
+
+            tokenizer.advance();    // ;
+            return;
+        }
+        // Only gets here if not assigning a value to an array index
+        tokenizer.advance();    // =
         compileExpression();
         vmWriter.writePop(assigneeSegment, index);
-
-        // ;
-        tokenizer.advance();
+        tokenizer.advance();    // ;
     }
 
     public void compileIf () throws IOException {
@@ -366,37 +391,6 @@ public class CompilationEngine {
         vmWriter.writePop(VMWriter.SEGMENT.TEMP, 0);
     }
 
-    private void handleIdentifier() throws IOException {
-        // if next char is a . or [
-        while (tokenizer.symbol() == '.' | tokenizer.symbol() == '[') {
-            if (tokenizer.symbol() == '.') {
-                writeSymbol();  // .
-                tokenizer.advance();
-
-                output.write("<identifier> " + tokenizer.identifier() + " </identifier>\n");  // class method
-                tokenizer.advance();
-
-                if (tokenizer.tokenType() == Tokenizer.TokenType.SYMBOL && tokenizer.symbol() == '(') {
-                    // handle the list of params
-                    writeSymbol();  // (
-                    tokenizer.advance();
-
-                    compileExpressionList();
-
-                    writeSymbol();  // )
-                    tokenizer.advance();
-                }
-            } else {
-                writeSymbol();  // [
-                tokenizer.advance();
-
-                compileExpression();
-
-                writeSymbol();  // ]
-                tokenizer.advance();
-            }
-        }
-    }
 
     public void compileReturn() throws IOException {
         // See if it is returning a value or not
@@ -411,16 +405,6 @@ public class CompilationEngine {
         tokenizer.advance();
         if (isVoid) vmWriter.writePush(VMWriter.SEGMENT.CONSTANT, 0);
         vmWriter.writeReturn();
-    }
-    
-    private void writeSymbol() throws  IOException {
-        output.write("<symbol>");
-        if (tokenizer.symbol() == '<') output.write("&lt;");
-        else if (tokenizer.symbol() == '>') output.write("&gt;");
-        else if (tokenizer.symbol() == '"') output.write("&quot;");
-        else if (tokenizer.symbol() == '&') output.write("&amp;");
-        else output.write(tokenizer.symbol());
-        output.write("</symbol>\n");
     }
 
     public void compileExpression() throws IOException {
@@ -488,8 +472,21 @@ public class CompilationEngine {
                 tokenizer.advance();
             }
             case STRING_CONST -> {
-                // TODO: HOW?
-                output.write("<stringConstant> " + tokenizer.stringVal() + " </stringConstant>\n");
+                String stringConst = tokenizer.stringVal();
+                int length = stringConst.length();
+
+                // create a new String
+                vmWriter.writePush(VMWriter.SEGMENT.CONSTANT, length);
+                vmWriter.writeCall("String.new", 1);
+                vmWriter.writePop(VMWriter.SEGMENT.TEMP, 1);  // store addr in temp 1
+
+                for (int i = 0; i < length; i++) {
+                    vmWriter.writePush(VMWriter.SEGMENT.TEMP, 1);  // String addr
+                    vmWriter.writePush(VMWriter.SEGMENT.CONSTANT, stringConst.charAt(i));
+                    vmWriter.writeCall("String.appendChar", 2);
+                    vmWriter.writePop(VMWriter.SEGMENT.TEMP, 0);    // disregard void return
+                }
+                vmWriter.writePush(VMWriter.SEGMENT.TEMP, 1); // leave str addr on stack
                 tokenizer.advance();
             }
             case KEYWORD -> {
@@ -568,8 +565,8 @@ public class CompilationEngine {
                     }
 
                 } else {
-                    // There is no dot, so it is either normal variable or
-                    // subroutine method() from same class instance
+                    // There is no dot, so it is either normal variable,
+                    // subroutine method() from same class instance, or array index access arr[i]
 
                     // We know there's no dot, but there could be a ( if it's a method
                     if (tokenizer.tokenType() == Tokenizer.TokenType.SYMBOL &
@@ -585,8 +582,38 @@ public class CompilationEngine {
 
                         vmWriter.writeCall(className + "." + name, this.length + 1);
 
-                    } else {
-                        // TODO: could also be array?
+                    } else if (tokenizer.tokenType() == Tokenizer.TokenType.SYMBOL &
+                            tokenizer.symbol() == '[') {
+                        // It's accessing an array index
+                        // varName is either in the classTable or subroutineTable
+                        // push it onto the stack
+                        SymbolTable.KIND kind;
+                        int index;
+                        if (classTable.kindOf(name) != SymbolTable.KIND.NONE) {
+                            // It's a class variable
+                            kind = classTable.kindOf(name);
+                            index = classTable.indexOf(name);
+                        } else {
+                            // subroutine variable
+                            kind = subroutineTable.kindOf(name);
+                            index = subroutineTable.indexOf(name);
+                        }
+                        vmWriter.writePush(VMWriter.KIND_TO_SEGMENT.get(kind), index);
+
+                        // process the express between the brackets
+                        tokenizer.advance(); // [
+                        compileExpression();
+                        tokenizer.advance(); // ]
+
+                        // add, so the top of the stack has the exact address calculated for the index
+                        vmWriter.writeArithmetic(VMWriter.ARITHMETIC_COMMAND.ADD);
+
+                        // get value at the address using THAT/pointer 1
+                        vmWriter.writePop(VMWriter.SEGMENT.POINTER, 1);
+                        vmWriter.writePush(VMWriter.SEGMENT.THAT, 0);
+                        // top of the stack now has the value at the array index
+                    }
+                    else {
                         // This is just a variable
                         // push it
                         SymbolTable.KIND kind;

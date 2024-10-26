@@ -25,7 +25,7 @@ public class VMWriter {
         KIND_TO_SEGMENT.put(SymbolTable.KIND.VAR, SEGMENT.LOCAL);
     }
 
-    public enum ARITHMETIC_COMMAND {ADD, SUB, NEG, EQ, GT, LT, AND, OR, NOT};
+    public enum ARITHMETIC_COMMAND {ADD, SUB, NEG, EQ, GT, LT, AND, OR, NOT}
 
     public static final Map<ARITHMETIC_COMMAND, String> ARITHMETIC_COMMAND_MAP = new HashMap<>();
     static {

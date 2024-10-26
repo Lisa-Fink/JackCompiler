@@ -2,19 +2,9 @@ import java.util.HashMap;
 import java.util.Map;
 
 public class SymbolTable {
-    private class SymbolTableEntry {
-        public final String type;
-        public final KIND kind;
-        public final int number;
-
-        public SymbolTableEntry(String type, KIND kind, int number) {
-            this.type = type;
-            this.kind = kind;
-            this.number = number;
-        }
-    }
+    private record SymbolTableEntry(String type, KIND kind, int number) {}
     private Map<String, SymbolTableEntry> table;
-    private Map<KIND, Integer> indexMap;
+    private final Map<KIND, Integer> indexMap;
     
     public enum KIND {STATIC, FIELD, ARG, VAR, NONE}
     public SymbolTable() {
