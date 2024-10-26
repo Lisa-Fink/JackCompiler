@@ -5,19 +5,21 @@ This project is a compiler for the Jack programming language, a simple Java-like
 
 ## Installation
 
-1. Clone this repository:
+Clone this repository:
    ```bash
    git clone https://github.com/your-username/jack-compiler.git
-    ```
+   ```
 
 
 ## Usage
-Navigate to src
-Run 
+
+- Navigate to src
+- Run 
   ```bash
   javac JackAnalyzer.java
   ```
-Run 
+
+- Run 
   ```bash
   java JackAnalyzer <File name or directory name>
   ```
